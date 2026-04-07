@@ -65,6 +65,25 @@ class TestCLI:
         assert result.exit_code == 0
         assert "Hardware Defaults" in result.output
 
+    def test_data_dir(self, tmp_r_script, tmp_path, mock_psutil, mock_nomad):
+        """--data-dir should accept a valid directory."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            str(tmp_r_script), "--data-dir", str(data_dir),
+        ])
+        assert result.exit_code == 0
+        assert "Job Submitted" in result.output
+
+    def test_data_dir_nonexistent(self, tmp_r_script):
+        """--data-dir with a nonexistent path should fail."""
+        runner = CliRunner()
+        result = runner.invoke(main, [
+            str(tmp_r_script), "--data-dir", "/nonexistent/dir",
+        ])
+        assert result.exit_code != 0
+
     def test_email_stub(self, tmp_r_script, mock_psutil, mock_nomad):
         """--email should print a 'not yet implemented' note."""
         runner = CliRunner()

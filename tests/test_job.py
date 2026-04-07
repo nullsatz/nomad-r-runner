@@ -54,6 +54,37 @@ class TestBuildJobSpec:
         assert volumes[0].endswith(":ro")
         assert str(tmp_r_script) in volumes[0]
 
+    def test_no_data_dir(self, tmp_r_script):
+        """Without data_dir, only the script volume should be present."""
+        spec = build_job_spec(
+            name="test-job",
+            script_path=tmp_r_script,
+            image="rocker/tidyverse:latest",
+            cpu_mhz=1000,
+            memory_mb=512,
+        )
+
+        volumes = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]["volumes"]
+        assert len(volumes) == 1
+
+    def test_data_dir_mount(self, tmp_r_script, tmp_path):
+        """With data_dir, a second read-only volume should be mounted at /data."""
+        data_dir = tmp_path / "mydata"
+        data_dir.mkdir()
+
+        spec = build_job_spec(
+            name="test-job",
+            script_path=tmp_r_script,
+            image="rocker/tidyverse:latest",
+            cpu_mhz=1000,
+            memory_mb=512,
+            data_dir=data_dir,
+        )
+
+        volumes = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]["volumes"]
+        assert len(volumes) == 2
+        assert volumes[1] == f"{data_dir}:/data:ro"
+
     def test_resources(self, tmp_r_script):
         """Resources should match the requested CPU and memory."""
         spec = build_job_spec(

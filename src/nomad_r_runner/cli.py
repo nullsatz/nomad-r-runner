@@ -22,6 +22,7 @@ from .output import print_defaults, print_error, print_resources, print_submissi
 @click.option("--max-cpu", type=int, default=None, help="Max CPU in MHz (default: 50% of system CPU).")
 @click.option("--image", default=DEFAULT_IMAGE, show_default=True, help="Docker image for R execution.")
 @click.option("--name", default=None, help="Job name (default: auto-generated).")
+@click.option("--data-dir", type=click.Path(exists=True, file_okay=False, resolve_path=True), default=None, help="Host directory to mount read-only at /data in the container.")
 @click.option("--email", default=None, help="Email for job notifications (not yet implemented).")
 @click.option("--show-defaults", is_flag=True, help="Print detected hardware defaults and exit.")
 @click.version_option(version=__version__)
@@ -31,6 +32,7 @@ def main(
     max_cpu: int | None,
     image: str,
     name: str | None,
+    data_dir: str | None,
     email: str | None,
     show_defaults: bool,
 ) -> None:
@@ -68,6 +70,7 @@ def main(
         image=image,
         cpu_mhz=cpu_mhz,
         memory_mb=ram_mb,
+        data_dir=Path(data_dir) if data_dir else None,
     )
 
     try:

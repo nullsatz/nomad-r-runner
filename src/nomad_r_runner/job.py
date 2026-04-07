@@ -33,6 +33,7 @@ def build_job_spec(
     image: str,
     cpu_mhz: int,
     memory_mb: int,
+    data_dir: Path | None = None,
     datacenter: str = DEFAULT_DATACENTER,
 ) -> dict:
     """Build a Nomad batch job spec for running an R script.
@@ -43,11 +44,17 @@ def build_job_spec(
         image: Docker image to use (e.g. ``rocker/tidyverse:latest``).
         cpu_mhz: CPU allocation in MHz.
         memory_mb: Memory allocation in megabytes.
+        data_dir: Optional host directory to mount read-only at ``/data``
+            inside the container.
         datacenter: Nomad datacenter name.
 
     Returns:
         A dict suitable for passing to ``nomad.Nomad().job.register_job()``.
     """
+    volumes = [f"{script_path}:/scripts/user_script.R:ro"]
+    if data_dir is not None:
+        volumes.append(f"{data_dir}:/data:ro")
+
     return {
         "Job": {
             "ID": name,
@@ -66,9 +73,7 @@ def build_job_spec(
                                 "image": image,
                                 "command": "Rscript",
                                 "args": ["/scripts/user_script.R"],
-                                "volumes": [
-                                    f"{script_path}:/scripts/user_script.R:ro"
-                                ],
+                                "volumes": volumes,
                             },
                             "Resources": {
                                 "CPU": cpu_mhz,
