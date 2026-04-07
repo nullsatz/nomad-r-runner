@@ -16,7 +16,7 @@ nomad agent -dev -config=/path/to/contrib/nomad-dev.hcl
 Minimal test script. Prints a greeting and R session info.
 
 ```bash
-nomad-r-runner examples/hello.R
+nomad-r-runner run examples/hello.R
 ```
 
 ## data_summary.R
@@ -24,7 +24,7 @@ nomad-r-runner examples/hello.R
 Generates random data and prints summary statistics.
 
 ```bash
-nomad-r-runner examples/data_summary.R --max-ram 512
+nomad-r-runner run examples/data_summary.R --max-ram 512
 ```
 
 ## read_data.R
@@ -33,7 +33,7 @@ Reads a CSV file from a mounted data directory. Demonstrates the
 `--data-dir` option.
 
 ```bash
-nomad-r-runner examples/read_data.R --data-dir examples/sample_data
+nomad-r-runner run examples/read_data.R --data-dir examples/sample_data
 ```
 
 ## plot_output.R
@@ -43,5 +43,24 @@ container (not included in the default job spec -- you would need to
 extend the job spec or add a `--output-dir` option).
 
 ```bash
-nomad-r-runner examples/plot_output.R --name my-plot
+nomad-r-runner run examples/plot_output.R --name my-plot
 ```
+
+## Building custom images
+
+If your R script needs packages beyond what's in the base image, build
+a custom Docker image first:
+
+```bash
+# From comma-separated lists
+nomad-r-runner build-image --packages glmnet,survival --bioc DESeq2 --tag my-r-image
+
+# From a file (see packages.txt for the format)
+nomad-r-runner build-image --from-file examples/packages.txt --tag my-r-image
+
+# Then use it
+nomad-r-runner run my_analysis.R --image my-r-image
+```
+
+See `packages.txt` for the file format — one package per line, with
+Bioconductor packages prefixed with `bioc::`.

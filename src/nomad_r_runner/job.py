@@ -4,6 +4,8 @@ Builds batch-type Nomad job specifications for running R scripts inside
 Docker containers, and submits them via the `python-nomad` client.
 """
 
+import base64
+import json
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -97,12 +99,19 @@ def submit_job(spec: dict, nomad_addr: str = "http://localhost:4646") -> SubmitR
     Returns:
         SubmitResult with the job ID and evaluation ID.
     """
-    client = nomad.Nomad(host=nomad_addr.replace("http://", "").split(":")[0],
-                         port=int(nomad_addr.rsplit(":", 1)[-1]))
+    client = _make_client(nomad_addr)
     response = client.job.register_job(spec["Job"]["ID"], spec)
     return SubmitResult(
         job_id=spec["Job"]["ID"],
         eval_id=response["EvalID"],
+    )
+
+
+def _make_client(nomad_addr: str = "http://localhost:4646") -> nomad.Nomad:
+    """Create a Nomad client from an address string."""
+    return nomad.Nomad(
+        host=nomad_addr.replace("http://", "").split(":")[0],
+        port=int(nomad_addr.rsplit(":", 1)[-1]),
     )
 
 
@@ -116,6 +125,56 @@ def get_status(job_id: str, nomad_addr: str = "http://localhost:4646") -> dict:
     Returns:
         Dict with job status information from Nomad.
     """
-    client = nomad.Nomad(host=nomad_addr.replace("http://", "").split(":")[0],
-                         port=int(nomad_addr.rsplit(":", 1)[-1]))
-    return client.job.get_job(job_id)
+    return _make_client(nomad_addr).job.get_job(job_id)
+
+
+def get_allocations(job_id: str, nomad_addr: str = "http://localhost:4646") -> list[dict]:
+    """Get allocations for a Nomad job.
+
+    Args:
+        job_id: The Nomad job ID.
+        nomad_addr: Nomad HTTP API address.
+
+    Returns:
+        List of allocation dicts, most recent first.
+    """
+    return _make_client(nomad_addr).job.get_allocations(job_id)
+
+
+def get_alloc_logs(
+    alloc_id: str,
+    task: str = "run-r",
+    log_type: str = "stderr",
+    nomad_addr: str = "http://localhost:4646",
+) -> str:
+    """Fetch logs from a Nomad allocation.
+
+    Args:
+        alloc_id: The allocation ID.
+        task: Task name within the allocation.
+        log_type: ``"stdout"`` or ``"stderr"``.
+        nomad_addr: Nomad HTTP API address.
+
+    Returns:
+        Log text as a string, or empty string if logs are unavailable.
+    """
+    client = _make_client(nomad_addr)
+    try:
+        raw = client.client.stream_logs.stream(alloc_id, task, log_type)
+
+        # python-nomad may return the raw JSON response with base64 data
+        if isinstance(raw, str):
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, dict) and "Data" in parsed:
+                    return base64.b64decode(parsed["Data"]).decode("utf-8", errors="replace")
+            except (json.JSONDecodeError, KeyError):
+                pass
+            return raw
+
+        if isinstance(raw, dict) and "Data" in raw:
+            return base64.b64decode(raw["Data"]).decode("utf-8", errors="replace")
+
+        return str(raw)
+    except Exception:
+        return ""

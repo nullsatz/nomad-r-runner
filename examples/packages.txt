@@ -1,0 +1,9 @@
+# Example packages file for nomad-r-runner build-image
+# CRAN packages: one per line
+# Bioconductor packages: prefix with bioc::
+
+glmnet
+survival
+data.table
+bioc::DESeq2
+bioc::GenomicRanges
