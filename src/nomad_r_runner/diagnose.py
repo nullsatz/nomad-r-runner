@@ -41,6 +41,11 @@ _PATTERNS: list[tuple[re.Pattern[str], str]] = [
         "R ran out of memory.\n"
         "  Try increasing the RAM allocation:  nomad-r-runner run script.R --max-ram <MB>",
     ),
+    (
+        re.compile(r"cannot open file '(/output/.+?)'.*Permission denied|cannot open.*'/output/"),
+        "Cannot write to /output/ inside the container.\n"
+        "  Mount a writable output directory:  nomad-r-runner run script.R --output-dir /path/to/output",
+    ),
 ]
 
 

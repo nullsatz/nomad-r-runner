@@ -85,6 +85,49 @@ class TestBuildJobSpec:
         assert len(volumes) == 2
         assert volumes[1] == f"{data_dir}:/data:ro"
 
+    def test_output_dir_mount(self, tmp_r_script, tmp_path):
+        """With output_dir, a writable volume should be mounted at /output."""
+        output_dir = tmp_path / "results"
+        output_dir.mkdir()
+
+        spec = build_job_spec(
+            name="test-job",
+            script_path=tmp_r_script,
+            image="rocker/tidyverse:latest",
+            cpu_mhz=1000,
+            memory_mb=512,
+            output_dir=output_dir,
+        )
+
+        volumes = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]["volumes"]
+        assert len(volumes) == 2
+        assert volumes[1] == f"{output_dir}:/output"
+        assert ":ro" not in volumes[1]
+
+    def test_data_and_output_dirs(self, tmp_r_script, tmp_path):
+        """Both data_dir and output_dir should produce three volumes."""
+        data_dir = tmp_path / "data"
+        data_dir.mkdir()
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+
+        spec = build_job_spec(
+            name="test-job",
+            script_path=tmp_r_script,
+            image="rocker/tidyverse:latest",
+            cpu_mhz=1000,
+            memory_mb=512,
+            data_dir=data_dir,
+            output_dir=output_dir,
+        )
+
+        volumes = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]["volumes"]
+        assert len(volumes) == 3
+        assert volumes[0].endswith(":ro")      # script
+        assert volumes[1].endswith(":ro")      # data
+        assert ":ro" not in volumes[2]         # output is writable
+        assert ":/output" in volumes[2]
+
     def test_resources(self, tmp_r_script):
         """Resources should match the requested CPU and memory."""
         spec = build_job_spec(

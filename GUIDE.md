@@ -50,6 +50,7 @@ Options:
   --max-cpu MHZ      Max CPU in MHz (default: 50% of system CPU)
   --image IMAGE      Docker image (default: rocker/tidyverse:latest)
   --data-dir DIR     Mount a host directory read-only at /data in the container
+  --output-dir DIR   Mount a host directory writable at /output in the container
   --name NAME        Job name (default: auto-generated)
   --show-defaults    Print detected hardware limits and exit
 ```
@@ -102,6 +103,36 @@ df <- read.csv("/data/my_data.csv")
 
 The data directory is mounted **read-only**. Your script cannot write
 back to it.
+
+## Saving Output Files
+
+To save results (plots, CSVs, model objects) back to the host:
+
+1. Create a directory for output (e.g., `~/myproject/output/`)
+2. Pass it with `--output-dir`:
+
+```bash
+mkdir -p ~/myproject/output
+nomad-r-runner run my_analysis.R --output-dir ~/myproject/output
+```
+
+3. In your R script, write files to `/output/`:
+
+```r
+write.csv(results, "/output/results.csv")
+png("/output/plot.png")
+plot(x, y)
+dev.off()
+```
+
+The output directory is mounted **writable**. After the job completes,
+your files will be in the host directory you specified.
+
+You can use `--data-dir` and `--output-dir` together:
+
+```bash
+nomad-r-runner run my_analysis.R --data-dir ./data --output-dir ./output
+```
 
 ## Adding R Packages
 

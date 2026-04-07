@@ -43,6 +43,13 @@ class TestDiagnoseLogs:
         assert result is not None
         assert "max-ram" in result
 
+    def test_output_permission_denied(self):
+        """Detects permission errors writing to /output/."""
+        logs = "Error in file(file, \"wt\") : cannot open file '/output/results.csv': Permission denied"
+        result = diagnose_logs(logs)
+        assert result is not None
+        assert "output-dir" in result
+
     def test_no_match(self):
         """Unknown errors return None."""
         logs = "some random output\neverything looks fine"

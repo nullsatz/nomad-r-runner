@@ -47,6 +47,7 @@ def cli() -> None:
 @click.option("--image", default=DEFAULT_IMAGE, show_default=True, help="Docker image for R execution.")
 @click.option("--name", default=None, help="Job name (default: auto-generated).")
 @click.option("--data-dir", type=click.Path(exists=True, file_okay=False, resolve_path=True), default=None, help="Host directory to mount read-only at /data in the container.")
+@click.option("--output-dir", type=click.Path(exists=True, file_okay=False, resolve_path=True), default=None, help="Host directory to mount writable at /output in the container.")
 @click.option("--email", default=None, help="Email for job notifications (not yet implemented).")
 @click.option("--show-defaults", is_flag=True, help="Print detected hardware defaults and exit.")
 def run(
@@ -56,6 +57,7 @@ def run(
     image: str,
     name: str | None,
     data_dir: str | None,
+    output_dir: str | None,
     email: str | None,
     show_defaults: bool,
 ) -> None:
@@ -94,6 +96,7 @@ def run(
         cpu_mhz=cpu_mhz,
         memory_mb=ram_mb,
         data_dir=Path(data_dir) if data_dir else None,
+        output_dir=Path(output_dir) if output_dir else None,
     )
 
     try:

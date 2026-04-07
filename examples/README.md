@@ -36,14 +36,25 @@ Reads a CSV file from a mounted data directory. Demonstrates the
 nomad-r-runner run examples/read_data.R --data-dir examples/sample_data
 ```
 
-## plot_output.R
+## save_results.R
 
-Generates a PNG plot. Requires mounting an output directory into the
-container (not included in the default job spec -- you would need to
-extend the job spec or add a `--output-dir` option).
+Saves a CSV and a PNG plot to the mounted output directory.
+Demonstrates the `--output-dir` option.
 
 ```bash
-nomad-r-runner run examples/plot_output.R --name my-plot
+mkdir -p /tmp/r-output
+nomad-r-runner run examples/save_results.R --output-dir /tmp/r-output
+# After completion:
+ls /tmp/r-output/   # plot.png, results.csv
+```
+
+## plot_output.R
+
+Generates a PNG plot. Uses `--output-dir` to save to the host.
+
+```bash
+mkdir -p /tmp/r-output
+nomad-r-runner run examples/plot_output.R --output-dir /tmp/r-output
 ```
 
 ## Building custom images

@@ -36,6 +36,7 @@ def build_job_spec(
     cpu_mhz: int,
     memory_mb: int,
     data_dir: Path | None = None,
+    output_dir: Path | None = None,
     datacenter: str = DEFAULT_DATACENTER,
 ) -> dict:
     """Build a Nomad batch job spec for running an R script.
@@ -48,6 +49,8 @@ def build_job_spec(
         memory_mb: Memory allocation in megabytes.
         data_dir: Optional host directory to mount read-only at ``/data``
             inside the container.
+        output_dir: Optional host directory to mount writable at ``/output``
+            inside the container for saving results.
         datacenter: Nomad datacenter name.
 
     Returns:
@@ -56,6 +59,8 @@ def build_job_spec(
     volumes = [f"{script_path}:/scripts/user_script.R:ro"]
     if data_dir is not None:
         volumes.append(f"{data_dir}:/data:ro")
+    if output_dir is not None:
+        volumes.append(f"{output_dir}:/output")
 
     return {
         "Job": {

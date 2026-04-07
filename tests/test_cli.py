@@ -85,6 +85,35 @@ class TestRunCommand:
         ])
         assert result.exit_code != 0
 
+    def test_output_dir(self, tmp_r_script, tmp_path, mock_psutil, mock_nomad):
+        """--output-dir should accept a valid directory."""
+        output_dir = tmp_path / "output"
+        output_dir.mkdir()
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "run", str(tmp_r_script), "--output-dir", str(output_dir),
+        ])
+        assert result.exit_code == 0
+        assert "Job Submitted" in result.output
+
+    def test_output_dir_nonexistent(self, tmp_r_script):
+        """--output-dir with a nonexistent path should fail."""
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "run", str(tmp_r_script), "--output-dir", "/nonexistent/dir",
+        ])
+        assert result.exit_code != 0
+
+    def test_output_dir_is_file(self, tmp_r_script, tmp_path):
+        """--output-dir pointing to a file should fail."""
+        a_file = tmp_path / "not_a_dir.txt"
+        a_file.write_text("hello")
+        runner = CliRunner()
+        result = runner.invoke(cli, [
+            "run", str(tmp_r_script), "--output-dir", str(a_file),
+        ])
+        assert result.exit_code != 0
+
     def test_email_stub(self, tmp_r_script, mock_psutil, mock_nomad):
         """--email should print a 'not yet implemented' note."""
         runner = CliRunner()
