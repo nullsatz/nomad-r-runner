@@ -2,6 +2,15 @@
 
 Example R scripts for use with `nomad-r-runner`.
 
+## Prerequisites
+
+Nomad must be running with Docker volume mounts enabled. See
+`contrib/nomad-dev.hcl` for a ready-to-use dev-mode config:
+
+```bash
+nomad agent -dev -config=/path/to/contrib/nomad-dev.hcl
+```
+
 ## hello.R
 
 Minimal test script. Prints a greeting and R session info.
@@ -16,6 +25,15 @@ Generates random data and prints summary statistics.
 
 ```bash
 nomad-r-runner examples/data_summary.R --max-ram 512
+```
+
+## read_data.R
+
+Reads a CSV file from a mounted data directory. Demonstrates the
+`--data-dir` option.
+
+```bash
+nomad-r-runner examples/read_data.R --data-dir examples/sample_data
 ```
 
 ## plot_output.R
