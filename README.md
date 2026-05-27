@@ -34,6 +34,22 @@ df <- read.csv("/data/input.csv")
 write.csv(results, "/output/results.csv")
 ```
 
+## Namespaces
+
+Jobs are placed in a Nomad namespace. By default the tool auto-detects one:
+if the cluster has an `adhoc` namespace it uses that, otherwise it falls back
+to `default`. This lets a cluster operator set up a dedicated lane for ad-hoc
+R work without requiring any change here — the tool discovers it. Override
+with `--namespace`:
+
+```bash
+nomad-r-runner run my_analysis.R --namespace adhoc
+nomad-r-runner status <job-id> --namespace adhoc
+```
+
+`status` uses the same auto-detection, so it looks in the lane the job was
+submitted to. Pass `--namespace` to both commands if you've overridden it.
+
 ## Custom Images
 
 The default image is `rocker/tidyverse:latest`. If your script needs extra packages, build a custom image:

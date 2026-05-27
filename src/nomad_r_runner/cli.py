@@ -22,6 +22,7 @@ from .job import (
     get_alloc_logs,
     get_allocations,
     get_status,
+    pick_namespace,
     submit_job,
 )
 from .output import (
@@ -49,6 +50,7 @@ def cli() -> None:
 @click.option("--data-dir", type=click.Path(exists=True, file_okay=False, resolve_path=True), default=None, help="Host directory to mount read-only at /data in the container.")
 @click.option("--output-dir", type=click.Path(exists=True, file_okay=False, resolve_path=True), default=None, help="Host directory to mount writable at /output in the container.")
 @click.option("--email", default=None, help="Email for job notifications (not yet implemented).")
+@click.option("--namespace", default=None, help="Nomad namespace (default: auto-detect 'adhoc' if present, else 'default').")
 @click.option("--show-defaults", is_flag=True, help="Print detected hardware defaults and exit.")
 def run(
     script: str,
@@ -59,6 +61,7 @@ def run(
     data_dir: str | None,
     output_dir: str | None,
     email: str | None,
+    namespace: str | None,
     show_defaults: bool,
 ) -> None:
     """Submit an R script to Nomad for execution in a Docker container.
@@ -89,6 +92,9 @@ def run(
     )
     print_resources(ram_mb, cpu_mhz, was_clamped)
 
+    # Explicit --namespace wins; otherwise discover (prefer 'adhoc', else 'default').
+    ns = namespace or pick_namespace()
+
     spec = build_job_spec(
         name=job_name,
         script_path=script_path,
@@ -97,6 +103,7 @@ def run(
         memory_mb=ram_mb,
         data_dir=Path(data_dir) if data_dir else None,
         output_dir=Path(output_dir) if output_dir else None,
+        namespace=ns,
     )
 
     try:
@@ -150,13 +157,18 @@ def build_image_cmd(
 
 @cli.command()
 @click.argument("job_id")
-def status(job_id: str) -> None:
+@click.option("--namespace", default=None, help="Nomad namespace (default: auto-detect 'adhoc' if present, else 'default').")
+def status(job_id: str, namespace: str | None) -> None:
     """Check job status, view logs, and diagnose failures.
 
     JOB_ID is the Nomad job ID printed when the job was submitted.
     """
+    # Match the namespace selection used at submit time so we look in the
+    # same lane the job was dispatched to.
+    ns = namespace or pick_namespace()
+
     try:
-        job_info = get_status(job_id)
+        job_info = get_status(job_id, namespace=ns)
     except Exception as exc:
         print_error(f"Could not fetch job status: {exc}")
         raise SystemExit(1)
@@ -167,11 +179,11 @@ def status(job_id: str) -> None:
     stdout = ""
     stderr = ""
     try:
-        allocs = get_allocations(job_id)
+        allocs = get_allocations(job_id, namespace=ns)
         if allocs:
             alloc_id = allocs[0]["ID"]
-            stdout = get_alloc_logs(alloc_id, log_type="stdout")
-            stderr = get_alloc_logs(alloc_id, log_type="stderr")
+            stdout = get_alloc_logs(alloc_id, log_type="stdout", namespace=ns)
+            stderr = get_alloc_logs(alloc_id, log_type="stderr", namespace=ns)
     except Exception:
         pass  # logs unavailable, show status without them
 
@@ -186,7 +198,7 @@ def status(job_id: str) -> None:
     if job_status == "dead":
         # Check if it completed or failed from the allocations
         try:
-            allocs = get_allocations(job_id)
+            allocs = get_allocations(job_id, namespace=ns)
             if allocs:
                 client_status = allocs[0].get("ClientStatus", "")
                 display_status = client_status  # "complete" or "failed"

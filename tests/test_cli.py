@@ -193,22 +193,24 @@ class TestStatusCommand:
         assert result.exit_code == 0
         assert "Check job status" in result.output
 
+    @patch("nomad_r_runner.cli.pick_namespace", return_value="default")
     @patch("nomad_r_runner.cli.get_alloc_logs", return_value="")
     @patch("nomad_r_runner.cli.get_allocations", return_value=[{"ID": "alloc-1", "ClientStatus": "complete"}])
     @patch("nomad_r_runner.cli.get_status", return_value={"Status": "dead"})
-    def test_completed_job(self, mock_status, mock_allocs, mock_logs):
+    def test_completed_job(self, mock_status, mock_allocs, mock_logs, mock_pick):
         """A completed job should show 'complete' status."""
         runner = CliRunner()
         result = runner.invoke(cli, ["status", "test-job-123"])
         assert result.exit_code == 0
         assert "complete" in result.output
 
+    @patch("nomad_r_runner.cli.pick_namespace", return_value="default")
     @patch("nomad_r_runner.cli.get_alloc_logs")
     @patch("nomad_r_runner.cli.get_allocations", return_value=[{"ID": "alloc-1", "ClientStatus": "failed"}])
     @patch("nomad_r_runner.cli.get_status", return_value={"Status": "dead"})
-    def test_failed_job_with_diagnosis(self, mock_status, mock_allocs, mock_logs):
+    def test_failed_job_with_diagnosis(self, mock_status, mock_allocs, mock_logs, mock_pick):
         """A failed job with a missing package should show a suggestion."""
-        mock_logs.side_effect = lambda alloc_id, log_type="stderr": (
+        mock_logs.side_effect = lambda alloc_id, log_type="stderr", namespace="default": (
             "Error in library(glmnet) : there is no package called \u2018glmnet\u2019"
             if log_type == "stderr" else ""
         )
@@ -218,8 +220,9 @@ class TestStatusCommand:
         assert "failed" in result.output
         assert "build-image" in result.output
 
+    @patch("nomad_r_runner.cli.pick_namespace", return_value="default")
     @patch("nomad_r_runner.cli.get_status", side_effect=Exception("not found"))
-    def test_unknown_job(self, mock_status):
+    def test_unknown_job(self, mock_status, mock_pick):
         """A nonexistent job should show an error."""
         runner = CliRunner()
         result = runner.invoke(cli, ["status", "nonexistent-job"])
