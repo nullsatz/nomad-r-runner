@@ -47,17 +47,27 @@ def print_defaults(defaults: HardwareDefaults) -> None:
     console.print(table)
 
 
-def print_resources(ram_mb: int, cpu_mhz: int, was_clamped: bool) -> None:
+def print_resources(
+    ram_mb: int,
+    cpu_mhz: int,
+    was_clamped: bool,
+    user_label: str | None = None,
+) -> None:
     """Print the resource allocation for the job.
 
     Args:
         ram_mb: Allocated RAM in MB.
         cpu_mhz: Allocated CPU in MHz.
         was_clamped: Whether values were clamped to defaults.
+        user_label: Container user shown alongside the resources. A
+            ``"UID:GID"`` string when running as the submitter, or ``None``
+            (legacy default) when the container uses its image default
+            (typically root) — most often because ``--as-root`` was passed.
     """
     if was_clamped:
         console.print("[yellow]Warning:[/] Requested resources exceeded defaults and were clamped.")
-    console.print(f"  RAM: [bold]{ram_mb}[/] MB  |  CPU: [bold]{cpu_mhz}[/] MHz")
+    user_part = f"  |  User: [bold]{user_label}[/]" if user_label else "  |  User: [bold]container default[/]"
+    console.print(f"  RAM: [bold]{ram_mb}[/] MB  |  CPU: [bold]{cpu_mhz}[/] MHz{user_part}")
 
 
 def print_image_build(tag: str) -> None:

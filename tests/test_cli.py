@@ -121,6 +121,33 @@ class TestRunCommand:
         assert result.exit_code == 0
         assert "not yet implemented" in result.output.lower()
 
+    def test_default_runs_as_current_user(
+        self, tmp_r_script, mock_psutil, mock_nomad, monkeypatch
+    ):
+        """Default invocation should pin the container to the caller's UID:GID
+        so bind-mounted output files end up owned by the submitter."""
+        monkeypatch.setattr("nomad_r_runner.cli.os.getuid", lambda: 1234)
+        monkeypatch.setattr("nomad_r_runner.cli.os.getgid", lambda: 5678)
+        runner = CliRunner()
+        result = runner.invoke(cli, ["run", str(tmp_r_script)])
+        assert result.exit_code == 0
+        # mock_nomad records register_job(job_id, spec); pull the spec arg out.
+        spec = mock_nomad.job.register_job.call_args.args[1]
+        config = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]
+        assert config["user"] == "1234:5678"
+        assert "1234:5678" in result.output  # surfaced in resource summary
+
+    def test_as_root_omits_user(self, tmp_r_script, mock_psutil, mock_nomad):
+        """--as-root should restore the legacy behavior: no 'user' on the
+        docker Config, so the container runs as its image default user."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["run", str(tmp_r_script), "--as-root"])
+        assert result.exit_code == 0
+        spec = mock_nomad.job.register_job.call_args.args[1]
+        config = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]
+        assert "user" not in config
+        assert "container default" in result.output
+
 
 class TestBuildImageCommand:
     """Integration tests for the ``build-image`` subcommand."""

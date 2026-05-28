@@ -68,6 +68,7 @@ def build_job_spec(
     output_dir: Path | None = None,
     datacenter: str = DEFAULT_DATACENTER,
     namespace: str = DEFAULT_NAMESPACE,
+    run_as_user: str | None = None,
 ) -> dict:
     """Build a Nomad batch job spec for running an R script.
 
@@ -83,6 +84,13 @@ def build_job_spec(
             inside the container for saving results.
         datacenter: Nomad datacenter name.
         namespace: Nomad namespace to place the job in.
+        run_as_user: If set, run the container as this user (passed straight
+            to the docker driver's ``user`` field; typically ``"UID:GID"``
+            with numeric IDs). When ``None``, the container uses its image
+            default — typically root, which on bind-mounted host paths
+            produces root-owned output files the submitter then can't clean
+            up. The CLI defaults this to the caller's own ``UID:GID`` and
+            exposes ``--as-root`` to opt out.
 
     Returns:
         A dict suitable for passing to ``nomad.Nomad().job.register_job()``.
@@ -92,6 +100,15 @@ def build_job_spec(
         volumes.append(f"{data_dir}:/data:ro")
     if output_dir is not None:
         volumes.append(f"{output_dir}:/output")
+
+    config: dict = {
+        "image": image,
+        "command": "Rscript",
+        "args": ["/scripts/user_script.R"],
+        "volumes": volumes,
+    }
+    if run_as_user is not None:
+        config["user"] = run_as_user
 
     return {
         "Job": {
@@ -108,12 +125,7 @@ def build_job_spec(
                         {
                             "Name": "run-r",
                             "Driver": "docker",
-                            "Config": {
-                                "image": image,
-                                "command": "Rscript",
-                                "args": ["/scripts/user_script.R"],
-                                "volumes": volumes,
-                            },
+                            "Config": config,
                             "Resources": {
                                 "CPU": cpu_mhz,
                                 "MemoryMB": memory_mb,

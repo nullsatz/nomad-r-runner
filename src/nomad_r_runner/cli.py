@@ -7,6 +7,7 @@ Defines the ``nomad-r-runner`` CLI as a Click group with two subcommands:
 - ``build-image`` — build a custom Docker image with extra R packages
 """
 
+import os
 import uuid
 from pathlib import Path
 
@@ -51,6 +52,7 @@ def cli() -> None:
 @click.option("--output-dir", type=click.Path(exists=True, file_okay=False, resolve_path=True), default=None, help="Host directory to mount writable at /output in the container.")
 @click.option("--email", default=None, help="Email for job notifications (not yet implemented).")
 @click.option("--namespace", default=None, help="Nomad namespace (default: auto-detect 'adhoc' if present, else 'default').")
+@click.option("--as-root", is_flag=True, help="Run the container as its image default user (usually root). Default is to run as your UID:GID so output files belong to you, not root.")
 @click.option("--show-defaults", is_flag=True, help="Print detected hardware defaults and exit.")
 def run(
     script: str,
@@ -62,6 +64,7 @@ def run(
     output_dir: str | None,
     email: str | None,
     namespace: str | None,
+    as_root: bool,
     show_defaults: bool,
 ) -> None:
     """Submit an R script to Nomad for execution in a Docker container.
@@ -90,7 +93,17 @@ def run(
         (max_ram is not None and max_ram > defaults.max_ram_mb)
         or (max_cpu is not None and max_cpu > defaults.max_cpu_mhz)
     )
-    print_resources(ram_mb, cpu_mhz, was_clamped)
+
+    # Default behavior: pin the container to the submitter's UID:GID so output
+    # bind-mounted into the container is owned by them on the host, not root.
+    # --as-root opts out (image default user, typically root). On platforms
+    # without POSIX UIDs (Windows) the pin is silently skipped.
+    if as_root or not hasattr(os, "getuid"):
+        run_as_user = None
+    else:
+        run_as_user = f"{os.getuid()}:{os.getgid()}"
+
+    print_resources(ram_mb, cpu_mhz, was_clamped, user_label=run_as_user)
 
     # Explicit --namespace wins; otherwise discover (prefer 'adhoc', else 'default').
     ns = namespace or pick_namespace()
@@ -104,6 +117,7 @@ def run(
         data_dir=Path(data_dir) if data_dir else None,
         output_dir=Path(output_dir) if output_dir else None,
         namespace=ns,
+        run_as_user=run_as_user,
     )
 
     try:

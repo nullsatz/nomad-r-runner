@@ -128,6 +128,35 @@ class TestBuildJobSpec:
         assert ":ro" not in volumes[2]         # output is writable
         assert ":/output" in volumes[2]
 
+    def test_no_user_field_by_default(self, tmp_r_script):
+        """Without run_as_user, the docker Config should not include 'user'
+        (preserves the legacy library behavior — container's image default)."""
+        spec = build_job_spec(
+            name="test-job",
+            script_path=tmp_r_script,
+            image="rocker/tidyverse:latest",
+            cpu_mhz=1000,
+            memory_mb=512,
+        )
+
+        config = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]
+        assert "user" not in config
+
+    def test_run_as_user_sets_config(self, tmp_r_script):
+        """Passing run_as_user should put a 'user' field on the docker Config
+        with the exact string supplied — the CLI uses 'UID:GID' numerically."""
+        spec = build_job_spec(
+            name="test-job",
+            script_path=tmp_r_script,
+            image="rocker/tidyverse:latest",
+            cpu_mhz=1000,
+            memory_mb=512,
+            run_as_user="1000:1000",
+        )
+
+        config = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]
+        assert config["user"] == "1000:1000"
+
     def test_resources(self, tmp_r_script):
         """Resources should match the requested CPU and memory."""
         spec = build_job_spec(

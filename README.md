@@ -50,6 +50,22 @@ nomad-r-runner status <job-id> --namespace adhoc
 `status` uses the same auto-detection, so it looks in the lane the job was
 submitted to. Pass `--namespace` to both commands if you've overridden it.
 
+## Container user
+
+By default the container runs as your host UID:GID, so anything it writes to
+`--output-dir` ends up owned by you — not root — and you can clean it up
+without sudo. (Docker containers run as root by default, and bind-mounted
+output files inherit that ownership on the host. That's a classic gotcha on
+shared machines.) Override with `--as-root` if you really need the image's
+default user (e.g. for in-container `apt-get` during a one-off debug run):
+
+```bash
+nomad-r-runner run my_analysis.R                 # runs as you
+nomad-r-runner run my_analysis.R --as-root       # runs as the image's default (root)
+```
+
+The chosen user is shown in the pre-submission summary.
+
 ## Custom Images
 
 The default image is `rocker/tidyverse:latest`. If your script needs extra packages, build a custom image:
