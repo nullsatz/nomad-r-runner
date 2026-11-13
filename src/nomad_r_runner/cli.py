@@ -30,6 +30,7 @@ from .output import (
     print_defaults,
     print_error,
     print_image_build,
+    print_job_options,
     print_resources,
     print_status,
     print_submission,
@@ -44,6 +45,7 @@ def cli() -> None:
 
 @cli.command()
 @click.argument("script", type=click.Path(exists=True, readable=True, resolve_path=True))
+@click.argument("script_args", nargs=-1, type=click.UNPROCESSED)
 @click.option("--max-ram", type=int, default=None, help="Max RAM in MB (default: 50% of system RAM).")
 @click.option("--max-cpu", type=int, default=None, help="Max CPU in MHz (default: 50% of system CPU).")
 @click.option("--image", default=DEFAULT_IMAGE, show_default=True, help="Docker image for R execution.")
@@ -53,9 +55,11 @@ def cli() -> None:
 @click.option("--email", default=None, help="Email for job notifications (not yet implemented).")
 @click.option("--namespace", default=None, help="Nomad namespace (default: auto-detect 'adhoc' if present, else 'default').")
 @click.option("--as-root", is_flag=True, help="Run the container as its image default user (usually root). Default is to run as your UID:GID so output files belong to you, not root.")
+@click.option("--restarts", type=click.IntRange(min=0, max=100), default=None, help="Times Nomad may restart the job after a failure. 0 = fail the first time, with no restart or reschedule. Default: Nomad's own policy, which retries.")
 @click.option("--show-defaults", is_flag=True, help="Print detected hardware defaults and exit.")
 def run(
     script: str,
+    script_args: tuple[str, ...],
     max_ram: int | None,
     max_cpu: int | None,
     image: str,
@@ -65,11 +69,17 @@ def run(
     email: str | None,
     namespace: str | None,
     as_root: bool,
+    restarts: int | None,
     show_defaults: bool,
 ) -> None:
     """Submit an R script to Nomad for execution in a Docker container.
 
-    SCRIPT is the path to the R script to run.
+    SCRIPT is the path to the R script to run. Anything after it that is not
+    one of this command's options is passed to the script as SCRIPT_ARGS,
+    which the script reads with commandArgs(trailingOnly = TRUE). Put the
+    arguments after a lone "--" if any of them begins with a dash:
+
+        nomad-r-runner run fit.R --max-ram 8000 -- --cohort 2024 --grade 5
     """
     defaults = get_defaults()
 
@@ -103,7 +113,18 @@ def run(
     else:
         run_as_user = f"{os.getuid()}:{os.getgid()}"
 
+    # Nomad reads ${...} in a job's arguments as one of its own variables and
+    # refuses to start the task when the name is not one it knows.
+    for arg in script_args:
+        if "${" in arg:
+            raise click.UsageError(
+                f"Script argument {arg!r} contains '${{', which Nomad would read as "
+                "one of its own variables. Pass the value another way, for example "
+                "in a file under --data-dir."
+            )
+
     print_resources(ram_mb, cpu_mhz, was_clamped, user_label=run_as_user)
+    print_job_options(script_args, restarts)
 
     # Explicit --namespace wins; otherwise discover (prefer 'adhoc', else 'default').
     ns = namespace or pick_namespace()
@@ -118,6 +139,8 @@ def run(
         output_dir=Path(output_dir) if output_dir else None,
         namespace=ns,
         run_as_user=run_as_user,
+        script_args=script_args,
+        restarts=restarts,
     )
 
     try:

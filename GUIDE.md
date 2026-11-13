@@ -43,7 +43,7 @@ nomad-r-runner status <job-id>
 Submit an R script to Nomad.
 
 ```
-nomad-r-runner run SCRIPT [OPTIONS]
+nomad-r-runner run SCRIPT [OPTIONS] [-- SCRIPT_ARGS...]
 
 Options:
   --max-ram MB       Max RAM in MB (default: 50% of system RAM)
@@ -52,7 +52,18 @@ Options:
   --data-dir DIR     Mount a host directory read-only at /data in the container
   --output-dir DIR   Mount a host directory writable at /output in the container
   --name NAME        Job name (default: auto-generated)
+  --as-root          Run as the image's default user instead of your UID:GID
+  --restarts N       Times Nomad may restart the job after a failure; 0 means
+                     fail the first time (default: Nomad's policy, which retries)
   --show-defaults    Print detected hardware limits and exit
+```
+
+Arguments after the script are passed to it and read in R with
+`commandArgs(trailingOnly = TRUE)`. Put them after a lone `--` if any of them
+begins with a dash, so that they are not read as options of `run`:
+
+```bash
+nomad-r-runner run fit.R --max-ram 8000 -- --cohort 2024 --grade 5
 ```
 
 ### `nomad-r-runner status`
@@ -204,6 +215,10 @@ problems:
 | "there is no package called 'X'" | Package not in the Docker image | `nomad-r-runner build-image --packages X` |
 | "cannot open file '/data/...'" | Data file not mounted | Add `--data-dir /path/to/data` |
 | "cannot allocate vector of size" | Not enough RAM | Increase `--max-ram` |
+
+A job that ran out of memory will run out again when Nomad restarts it. For
+a long job whose memory use does not vary, submit with `--restarts 0` so that
+it fails the first time instead of repeating the whole run.
 
 You can also check raw Nomad logs directly:
 

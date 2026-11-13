@@ -4,7 +4,10 @@ Provides styled output for job submission results, hardware defaults,
 and error messages using the `rich` library.
 """
 
+import shlex
+
 from rich.console import Console
+from rich.markup import escape
 from rich.panel import Panel
 from rich.table import Table
 
@@ -68,6 +71,24 @@ def print_resources(
         console.print("[yellow]Warning:[/] Requested resources exceeded defaults and were clamped.")
     user_part = f"  |  User: [bold]{user_label}[/]" if user_label else "  |  User: [bold]container default[/]"
     console.print(f"  RAM: [bold]{ram_mb}[/] MB  |  CPU: [bold]{cpu_mhz}[/] MHz{user_part}")
+
+
+def print_job_options(script_args: tuple[str, ...] | list[str], restarts: int | None) -> None:
+    """Print the script arguments and restart limit, when either was given.
+
+    The arguments are shown so that a stray word on the command line, which
+    would otherwise be forwarded to the script unnoticed, is visible before
+    the job is submitted.
+
+    Args:
+        script_args: Arguments that will be passed to the R script.
+        restarts: The ``--restarts`` value, or ``None`` for Nomad's default.
+    """
+    if script_args:
+        shown = " ".join(shlex.quote(str(a)) for a in script_args)
+        console.print(f"  Script arguments: [bold]{escape(shown)}[/]")
+    if restarts is not None:
+        console.print(f"  Restarts allowed: [bold]{restarts}[/]")
 
 
 def print_image_build(tag: str) -> None:
