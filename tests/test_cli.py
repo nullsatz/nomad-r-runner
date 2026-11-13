@@ -133,20 +133,82 @@ class TestRunCommand:
         assert result.exit_code == 0
         # mock_nomad records register_job(job_id, spec); pull the spec arg out.
         spec = mock_nomad.job.register_job.call_args.args[1]
-        config = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]
-        assert config["user"] == "1234:5678"
+        task = spec["Job"]["TaskGroups"][0]["Tasks"][0]
+        assert task["User"] == "1234:5678"
+        assert "user" not in task["Config"]      # Nomad rejects it there (#1)
         assert "1234:5678" in result.output  # surfaced in resource summary
 
     def test_as_root_omits_user(self, tmp_r_script, mock_psutil, mock_nomad):
-        """--as-root should restore the legacy behavior: no 'user' on the
-        docker Config, so the container runs as its image default user."""
+        """--as-root should restore the legacy behavior: no User on the
+        task, so the container runs as its image default user."""
         runner = CliRunner()
         result = runner.invoke(cli, ["run", str(tmp_r_script), "--as-root"])
         assert result.exit_code == 0
         spec = mock_nomad.job.register_job.call_args.args[1]
-        config = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]
-        assert "user" not in config
+        task = spec["Job"]["TaskGroups"][0]["Tasks"][0]
+        assert "User" not in task
+        assert "user" not in task["Config"]
         assert "container default" in result.output
+
+    def test_script_args_pass_through(self, tmp_r_script, mock_psutil, mock_nomad):
+        """Arguments after the script reach Rscript; after '--' they may
+        begin with a dash without being read as our own options (#2)."""
+        runner = CliRunner()
+        result = runner.invoke(
+            cli, ["run", str(tmp_r_script), "--max-ram", "1024", "--", "--cohort", "2024", "grade5"]
+        )
+        assert result.exit_code == 0, result.output
+        spec = mock_nomad.job.register_job.call_args.args[1]
+        task = spec["Job"]["TaskGroups"][0]["Tasks"][0]
+        assert task["Config"]["args"] == ["/scripts/user_script.R", "--cohort", "2024", "grade5"]
+        assert task["Resources"]["MemoryMB"] == 1024
+        # shown before submission, so a stray word is visible
+        assert "Script arguments: --cohort 2024 grade5" in result.output
+
+        result = runner.invoke(cli, ["run", str(tmp_r_script), "alpha", "beta"])
+        assert result.exit_code == 0, result.output
+        spec = mock_nomad.job.register_job.call_args.args[1]
+        assert spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]["args"] == [
+            "/scripts/user_script.R", "alpha", "beta"]
+
+        # with no arguments the command line is as before
+        result = runner.invoke(cli, ["run", str(tmp_r_script)])
+        assert result.exit_code == 0, result.output
+        assert "Script arguments" not in result.output
+        spec = mock_nomad.job.register_job.call_args.args[1]
+        assert spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]["args"] == ["/scripts/user_script.R"]
+
+    def test_script_arg_with_nomad_variable_syntax_is_refused(
+        self, tmp_r_script, mock_psutil, mock_nomad
+    ):
+        """Nomad would read ${...} as its own variable and fail the task."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["run", str(tmp_r_script), "--", "${cohort}.csv"])
+        assert result.exit_code != 0
+        assert "${" in result.output
+        mock_nomad.job.register_job.assert_not_called()
+
+    def test_restarts_option(self, tmp_r_script, mock_psutil, mock_nomad):
+        """--restarts 0 makes the job fail the first time; without the
+        option Nomad's own policy applies (#3)."""
+        runner = CliRunner()
+        result = runner.invoke(cli, ["run", str(tmp_r_script), "--restarts", "0"])
+        assert result.exit_code == 0, result.output
+        group = mock_nomad.job.register_job.call_args.args[1]["Job"]["TaskGroups"][0]
+        assert group["RestartPolicy"]["Attempts"] == 0
+        assert group["RestartPolicy"]["Mode"] == "fail"
+        assert group["ReschedulePolicy"] == {"Attempts": 0, "Unlimited": False}
+        assert "Restarts allowed: 0" in result.output
+
+        result = runner.invoke(cli, ["run", str(tmp_r_script)])
+        assert result.exit_code == 0, result.output
+        group = mock_nomad.job.register_job.call_args.args[1]["Job"]["TaskGroups"][0]
+        assert "RestartPolicy" not in group
+        assert "ReschedulePolicy" not in group
+
+        for bad in ("-1", "101"):
+            result = runner.invoke(cli, ["run", str(tmp_r_script), "--restarts", bad])
+            assert result.exit_code != 0
 
 
 class TestBuildImageCommand:

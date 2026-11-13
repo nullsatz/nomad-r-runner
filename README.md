@@ -7,6 +7,8 @@ A CLI tool for submitting R scripts to [HashiCorp Nomad](https://www.nomadprojec
 - **Submit R scripts** as Nomad batch jobs running in Docker
 - **Auto-detect hardware** and set sensible CPU/RAM defaults (50% of system)
 - **Mount data and output directories** into the container
+- **Pass arguments** to the script, read with `commandArgs(trailingOnly = TRUE)`
+- **Control restarts** so a job that cannot succeed fails the first time
 - **Build custom Docker images** with CRAN and Bioconductor packages
 - **Diagnose failures** with actionable suggestions (missing packages, files, memory)
 - **Stream build output** so you can follow long package compilations
@@ -65,6 +67,40 @@ nomad-r-runner run my_analysis.R --as-root       # runs as the image's default (
 ```
 
 The chosen user is shown in the pre-submission summary.
+
+## Script arguments
+
+Anything after the script that is not one of `run`'s own options is passed to
+the script. Put the arguments after a lone `--` if any of them begins with a
+dash:
+
+```bash
+nomad-r-runner run fit.R 2024 math
+nomad-r-runner run fit.R --max-ram 8000 -- --cohort 2024 --grade 5
+```
+
+```r
+args <- commandArgs(trailingOnly = TRUE)   # c("--cohort", "2024", "--grade", "5")
+```
+
+The arguments are listed in the pre-submission summary; check them there, as
+any extra word on the command line is passed to the script. An argument
+that contains `${` is refused, because Nomad reads `${...}` in a job's
+arguments as one of its own variables and will not start the task.
+
+## Restarts
+
+By default Nomad starts a failed batch job again, first on the same machine
+and then once more elsewhere. That helps with a passing fault, but a job that
+ran out of memory will run out again, and each attempt costs the full run
+time. `--restarts N` sets the number of restarts to exactly `N` and turns
+rescheduling off, so the job starts at most `N + 1` times. The count covers
+every kind of failure, including one before R starts, such as an image pull
+that times out:
+
+```bash
+nomad-r-runner run long_job.R --restarts 0   # fail the first time
+```
 
 ## Custom Images
 

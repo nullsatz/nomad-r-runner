@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-from nomad_r_runner.job import build_job_spec, submit_job
+import pytest
+
+from nomad_r_runner.job import RESTART_INTERVAL_NS, build_job_spec, submit_job
 
 
 class TestBuildJobSpec:
@@ -129,8 +131,8 @@ class TestBuildJobSpec:
         assert ":/output" in volumes[2]
 
     def test_no_user_field_by_default(self, tmp_r_script):
-        """Without run_as_user, the docker Config should not include 'user'
-        (preserves the legacy library behavior — container's image default)."""
+        """Without run_as_user, the task has no User (the container uses its
+        image default), and the docker Config never carries a 'user' key."""
         spec = build_job_spec(
             name="test-job",
             script_path=tmp_r_script,
@@ -139,12 +141,13 @@ class TestBuildJobSpec:
             memory_mb=512,
         )
 
-        config = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]
-        assert "user" not in config
+        task = spec["Job"]["TaskGroups"][0]["Tasks"][0]
+        assert "User" not in task
+        assert "user" not in task["Config"]
 
-    def test_run_as_user_sets_config(self, tmp_r_script):
-        """Passing run_as_user should put a 'user' field on the docker Config
-        with the exact string supplied — the CLI uses 'UID:GID' numerically."""
+    def test_run_as_user_sets_task_user(self, tmp_r_script):
+        """run_as_user goes on the task as 'User'. Nomad's docker driver
+        rejects a 'user' key inside Config and the job never starts (#1)."""
         spec = build_job_spec(
             name="test-job",
             script_path=tmp_r_script,
@@ -154,8 +157,83 @@ class TestBuildJobSpec:
             run_as_user="1000:1000",
         )
 
-        config = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]
-        assert config["user"] == "1000:1000"
+        task = spec["Job"]["TaskGroups"][0]["Tasks"][0]
+        assert task["User"] == "1000:1000"
+        assert "user" not in task["Config"]
+
+    def test_script_args_follow_the_script(self, tmp_r_script):
+        """Arguments are appended after the script path, as strings (#2)."""
+        spec = build_job_spec(
+            name="test-job",
+            script_path=tmp_r_script,
+            image="rocker/tidyverse:latest",
+            cpu_mhz=1000,
+            memory_mb=512,
+            script_args=("--cohort", 2024, "grade 5"),
+        )
+        args = spec["Job"]["TaskGroups"][0]["Tasks"][0]["Config"]["args"]
+        assert args == ["/scripts/user_script.R", "--cohort", "2024", "grade 5"]
+
+    def test_default_leaves_restart_policy_to_nomad(self, tmp_r_script):
+        spec = build_job_spec(
+            name="test-job",
+            script_path=tmp_r_script,
+            image="rocker/tidyverse:latest",
+            cpu_mhz=1000,
+            memory_mb=512,
+        )
+        group = spec["Job"]["TaskGroups"][0]
+        assert "RestartPolicy" not in group
+        assert "ReschedulePolicy" not in group
+
+    def test_restarts_zero_fails_the_first_time(self, tmp_r_script):
+        """restarts=0: no restart on the node and no reschedule either (#3)."""
+        spec = build_job_spec(
+            name="test-job",
+            script_path=tmp_r_script,
+            image="rocker/tidyverse:latest",
+            cpu_mhz=1000,
+            memory_mb=512,
+            restarts=0,
+        )
+        group = spec["Job"]["TaskGroups"][0]
+        assert group["RestartPolicy"] == {
+            "Attempts": 0,
+            "Interval": RESTART_INTERVAL_NS,
+            "Mode": "fail",
+        }
+        assert group["ReschedulePolicy"] == {"Attempts": 0, "Unlimited": False}
+
+    def test_restarts_n_and_negative(self, tmp_r_script):
+        kwargs = {
+            "name": "test-job",
+            "script_path": tmp_r_script,
+            "image": "rocker/tidyverse:latest",
+            "cpu_mhz": 1000,
+            "memory_mb": 512,
+        }
+        group = build_job_spec(**kwargs, restarts=2)["Job"]["TaskGroups"][0]
+        assert group["RestartPolicy"]["Attempts"] == 2
+        assert group["ReschedulePolicy"]["Attempts"] == 0
+        with pytest.raises(ValueError):
+            build_job_spec(**kwargs, restarts=-1)
+
+    def test_restart_interval_outlasts_a_long_job(self):
+        """Nomad starts the restart count again after each Interval; its
+        24-hour default would let a multi-day job restart without limit."""
+        assert RESTART_INTERVAL_NS >= 30 * 24 * 3600 * 10**9
+
+    def test_script_args_must_be_a_sequence(self, tmp_r_script):
+        """A bare string would be split into characters."""
+        with pytest.raises(TypeError):
+            build_job_spec(
+                name="test-job",
+                script_path=tmp_r_script,
+                image="rocker/tidyverse:latest",
+                cpu_mhz=1000,
+                memory_mb=512,
+                script_args="2024",
+            )
 
     def test_resources(self, tmp_r_script):
         """Resources should match the requested CPU and memory."""

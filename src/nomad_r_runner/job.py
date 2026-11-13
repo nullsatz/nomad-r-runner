@@ -15,6 +15,9 @@ import nomad
 DEFAULT_IMAGE = "rocker/tidyverse:latest"
 DEFAULT_DATACENTER = "dc1"
 DEFAULT_NAMESPACE = "default"
+
+# Window in which Nomad counts restarts, in nanoseconds (30 days).
+RESTART_INTERVAL_NS = 30 * 24 * 60 * 60 * 10**9
 PREFERRED_NAMESPACE = "adhoc"
 
 
@@ -69,6 +72,8 @@ def build_job_spec(
     datacenter: str = DEFAULT_DATACENTER,
     namespace: str = DEFAULT_NAMESPACE,
     run_as_user: str | None = None,
+    script_args: tuple[str, ...] | list[str] = (),
+    restarts: int | None = None,
 ) -> dict:
     """Build a Nomad batch job spec for running an R script.
 
@@ -84,13 +89,30 @@ def build_job_spec(
             inside the container for saving results.
         datacenter: Nomad datacenter name.
         namespace: Nomad namespace to place the job in.
-        run_as_user: If set, run the container as this user (passed straight
-            to the docker driver's ``user`` field; typically ``"UID:GID"``
-            with numeric IDs). When ``None``, the container uses its image
-            default — typically root, which on bind-mounted host paths
-            produces root-owned output files the submitter then can't clean
-            up. The CLI defaults this to the caller's own ``UID:GID`` and
-            exposes ``--as-root`` to opt out.
+        run_as_user: If set, run the container as this user (the task's
+            ``User`` field, which the docker driver hands to the container;
+            typically ``"UID:GID"`` with numeric IDs). It belongs on the
+            task, not in the docker driver's ``Config``: Nomad rejects a
+            ``user`` key there and the job never starts. When ``None``, the
+            container uses its image default — typically root, which on
+            bind-mounted host paths produces root-owned output files the
+            submitter then can't clean up. The CLI defaults this to the
+            caller's own ``UID:GID`` and exposes ``--as-root`` to opt out.
+        script_args: Arguments passed to the R script after its path; the
+            script reads them with ``commandArgs(trailingOnly = TRUE)``.
+        restarts: How many times Nomad may start the task again after it
+            fails (an R error, or the container being killed for running
+            out of memory). ``None`` leaves Nomad's default for batch jobs,
+            which retries on the same machine and then reschedules once.
+            A number sets the restart attempts to exactly that and turns
+            rescheduling off, so the task starts at most ``restarts + 1``
+            times and ``0`` means the job fails the first time. The count
+            covers every kind of failure, including one before R starts
+            (an image pull that times out, say).
+
+    Raises:
+        TypeError: ``script_args`` is a single string rather than a sequence.
+        ValueError: ``restarts`` is negative.
 
     Returns:
         A dict suitable for passing to ``nomad.Nomad().job.register_job()``.
@@ -101,14 +123,45 @@ def build_job_spec(
     if output_dir is not None:
         volumes.append(f"{output_dir}:/output")
 
+    if isinstance(script_args, (str, bytes)):
+        raise TypeError("script_args must be a sequence of arguments, not a single string")
+
     config: dict = {
         "image": image,
         "command": "Rscript",
-        "args": ["/scripts/user_script.R"],
+        "args": ["/scripts/user_script.R", *[str(a) for a in script_args]],
         "volumes": volumes,
     }
+
+    task: dict = {
+        "Name": "run-r",
+        "Driver": "docker",
+        "Config": config,
+        "Resources": {
+            "CPU": cpu_mhz,
+            "MemoryMB": memory_mb,
+        },
+    }
     if run_as_user is not None:
-        config["user"] = run_as_user
+        task["User"] = run_as_user
+
+    group: dict = {
+        "Name": "r-group",
+        "Count": 1,
+        "Tasks": [task],
+    }
+    if restarts is not None:
+        if restarts < 0:
+            raise ValueError("restarts must be 0 or more")
+        # Nomad counts restarts within Interval and starts the count again
+        # when it ends. Its default is 24 hours, which a long job outlasts,
+        # so the interval is set far beyond any run.
+        group["RestartPolicy"] = {
+            "Attempts": restarts,
+            "Interval": RESTART_INTERVAL_NS,
+            "Mode": "fail",
+        }
+        group["ReschedulePolicy"] = {"Attempts": 0, "Unlimited": False}
 
     return {
         "Job": {
@@ -117,23 +170,7 @@ def build_job_spec(
             "Namespace": namespace,
             "Type": "batch",
             "Datacenters": [datacenter],
-            "TaskGroups": [
-                {
-                    "Name": "r-group",
-                    "Count": 1,
-                    "Tasks": [
-                        {
-                            "Name": "run-r",
-                            "Driver": "docker",
-                            "Config": config,
-                            "Resources": {
-                                "CPU": cpu_mhz,
-                                "MemoryMB": memory_mb,
-                            },
-                        }
-                    ],
-                }
-            ],
+            "TaskGroups": [group],
         }
     }
 
